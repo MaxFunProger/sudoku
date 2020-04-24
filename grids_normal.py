@@ -10,6 +10,7 @@ class NormalGrid(SqlAlchemyBase):
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     grid = sqlalchemy.Column(sqlalchemy.String, nullable=True)
     solution = sqlalchemy.Column(sqlalchemy.String, nullable=True)
+    image = sqlalchemy.Column(sqlalchemy.String, default='')
 
     def __repr__(self):
         return '<NormalGrid> {} {}>'.format(self.id, self.grid, self.solution)

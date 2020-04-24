@@ -117,7 +117,7 @@ class YandexImages(object):
     # В случае успеха вернет 'ok'	               #
     ################################################
     def deleteImage(self, img_id):
-        path = 'skills/{skills_id}/images/{img_id}'.format(skills_id=self.skills,img_id = img_id)
+        path = 'skills/{skills_id}/images/{img_id}'.format(skills_id=self.skills, img_id=img_id)
         result = self.SESSION.delete(url=self.API_URL+path)
         content = self.validate_api_response(result)
         if content is not None:
