@@ -12,4 +12,3 @@ class User(SqlAlchemyBase):
     easy_used = sqlalchemy.Column(sqlalchemy.String, default='')
     normal_used = sqlalchemy.Column(sqlalchemy.String, default='')
     hard_used = sqlalchemy.Column(sqlalchemy.String, default='')
-

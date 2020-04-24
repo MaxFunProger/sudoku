@@ -2,12 +2,16 @@
 from flask import Flask, request
 import logging
 import db_session
+import os
+import sys
 import pymorphy2
 from grids_easy import EasyGrid
 from grids_normal import NormalGrid
 from grids_hard import HardGrid
 from users import User
 from random import randint
+from PIL import Image
+from YandexImages import YandexImages
 
 
 # библиотека, которая нам понадобится для работы с JSON
@@ -24,7 +28,6 @@ app = Flask(__name__)
 
 # Устанавливаем уровень логирования
 logging.basicConfig(level=logging.INFO)
-
 # Создадим словарь, чтобы для каждой сессии общения
 # с навыком хранились подсказки, которые видел пользователь.
 # Это поможет нам немного разнообразить подсказки ответов
@@ -52,7 +55,6 @@ facts = ['Бертхам Фельгенхауэр установил, что м�
          'Первый всемирный чемпионат по судоку прошел в Италии в городе Лука в 2006 году.'
          ' Первым победителем стала Яна Тилова из Чехии.',
          'Решения судоку должны находиться логически, а не перебором или угадыванием!']
-used = []
 started = False
 diff = False
 diff2 = False
@@ -64,12 +66,16 @@ finished = False
 chosen_grid_id = None
 new_game = False
 diff4 = False
+solution = ''
+yandex = YandexImages()
+# loaded = yandex.getLoadedImages()
+# yandex.deleteImage(loaded['image']['id'])
 
 
 @app.route('/post', methods=['POST'])
 def main():
     logging.info(f'Request: {request.json!r}')
-    db_session.global_init('sudoku.sqlite')
+    date_base_init()
     response = {
         'session': request.json['session'],
         'version': request.json['version'],
@@ -86,22 +92,34 @@ def main():
 
 
 def handle_dialog(req, res):
-    global used, started, diff, diff2, difficulty, chosen, diff3, chosen_grid, chosen_grid_id, finished, new_game, diff4
+    global started, diff, diff2, difficulty, chosen, diff3, chosen_grid, chosen_grid_id, finished,\
+        new_game, diff4, solution
     user_id = req['session']['user_id']
     session = db_session.create_session()
     users = session.query(User).filter(User.id == user_id).first()
     if users is None:
         check = 0
     else:
-        check = users.chosen_grid
+        check = 1
+    if req['session']['new']:
+        started = False
+        diff = False
+        diff2 = False
+        difficulty = None
+        chosen = False
+        diff3 = False
+        chosen_grid = None
+        finished = False
+        chosen_grid_id = None
+        new_game = False
+        diff4 = False
+        solution = ''
     if req['session']['new'] and not check:
         add_user = User()
         if session.query(User).filter(User.id == user_id).first() is None:
             add_user.id = user_id
             session.add(add_user)
             session.commit()
-        if users:
-            used = [users.easy_used, users.normal_used, users.hard_used]
 
         sessionStorage[user_id] = {
             'suggests': [
@@ -132,6 +150,46 @@ def handle_dialog(req, res):
              'hide': True}
             ]
         return
+    elif 'хватит' in req['request']['original_utterance'].lower().split():
+        if chosen:
+            session = db_session.create_session()
+            users.chosen_grid = chosen_grid
+            session.commit()
+        res['response']['text'] = 'Уже уходишь. Ну ладно, до новых встреч.'
+        res['response']['tts'] = 'Уже уходишь? Ну ладно, до новых встреч.'
+        res['response']['end_session'] = True
+        res['response']['buttons'] = []
+    elif 'помощь' in req['request']['original_utterance'].lower().split():
+        if started:
+            res['response']['text'] = 'Извини, но во время игры лучше не отвлекаться.'
+            res['response']['tts'] = 'Извини, но во время игры лучше не отвлекаться.'
+            return
+        res['response']['text'] = 'Правила просты:\n' \
+                                  '1) Заполни поле, используя только цифры от 1 до 9.\n' \
+                                  '2) Заполни поле так, чтобы ни в строке, ни в столбце,' \
+                                  ' ни в квадрате 3х3 не было одинаковых цифр.\n' \
+                                  '3) Веселись, думай, разработай свою тактику!'
+        res['response']['tts'] = 'Правила просты sil <[1000]> ' \
+                                  'Первое sil <[500]> Заполни поле, используя только цифры от 1 до 9.' \
+                                  'Второе sil <[500]> Заполни поле так, чтобы ни в строке, ни в столбце,' \
+                                  ' ни в квадрате 3х3 не было одинаковых цифр.' \
+                                  'Третье sil <[500]> Веселись, думай, разработай свою тактику!'
+        if user_id not in facts_user.keys():
+            facts_user[user_id] = 0
+        del res['response']['buttons'][2]
+        if get_fact(user_id) == "Извини, но у меня нет больше фактов.":
+            del res['response']['buttons'][2]
+    elif 'факт' in req['request']['original_utterance'].lower().split():
+        if started:
+            res['response']['text'] = 'Не думаю, что во время игры стоит отвлекаться.'
+            res['response']['tts'] = 'Не думаю , что во время игры стоит отвлекаться.'
+            res['response']['end_session'] = False
+            return
+        res['response']['text'] = get_fact(user_id)
+        res['response']['tts'] = res['response']['text']
+        if res['response']['text'] == "Извини , но у меня нет больше фактов.":
+            del res['response']['buttons'][3]
+        res['response']['end_session'] = False
 
     if users.chosen_grid and not diff:
         chosen = True
@@ -139,11 +197,14 @@ def handle_dialog(req, res):
         chosen_grid = users.chosen_grid
         diff = True
         res['response']['tts'] = 'С возвращением! Продолжаем играть!'
-        res['response']['text'] = ''
-        for i in range(81):
-            if i % 9 == 0 and i:
-                res['response']['text'] = res['response']['text'] + '\n'
-            res['response']['text'] = res['response']['text'] + chosen_grid[i]
+        img = yandex.downloadImageFile('/home/Miximka/mysite/img_test.png')
+        res['response']['tts'] = 'С возвращением! Продолжаем играть!'
+        res['response']['text'] = output_grid(chosen_grid)
+        res['response']['card'] = {}
+        res['response']['card']['type'] = 'BigImage'
+        res['response']['card']['image_id'] = img['id']
+        res['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
+                                           'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
         return
 
     if not started:
@@ -172,6 +233,20 @@ def handle_dialog(req, res):
             finished = False
             chosen_grid_id = None
             new_game = True
+            solution = ''
+        else:
+            started = False
+            diff = False
+            diff2 = False
+            difficulty = None
+            chosen = False
+            diff3 = False
+            chosen_grid = None
+            finished = False
+            chosen_grid_id = None
+            new_game = False
+            diff4 = False
+            solution = ''
 
     if 'начать' in req['request']['original_utterance'].lower() or started or new_game:
         new_game = False
@@ -226,18 +301,13 @@ def handle_dialog(req, res):
                                              ' Твоя цель - заполнить его цифрми от одного до девяти так ,' \
                                              ' чтобы в одной строке , одном столбце и в каждом квадрате' \
                                              ' три на три не было одинаковых цифр . Для совершения хода' \
-                                             ' назови номер столбца , ' \
-                                             'номер строки и нужную цифру от одного до девяти именно в таком порядке.'
-                    '''res["card"]['type'] = 'BigImage'
-                    res['card']['image_id'] = "image_id"
-                    res['card']['title'] = 'Столбцы: 1, 2, 3, 4, 5, 6, 7, 8, 9\n' \
-                                           'Строки: 1, 2, 3, 4, 5, 6, 7, 8, 9'''
-                    chosen_grid, chosen_grid_id = choose_grid(difficulty, user_id)   # #########################
-                    res['response']['text'] = ''
-                    for i in range(81):
-                        if i % 9 == 0 and i:
-                            res['response']['text'] = res['response']['text'] + '\n'
-                        res['response']['text'] = res['response']['text'] + chosen_grid[i]
+                                             ' назови букву строки , ' \
+                                             'номер столбца и нужную цифру от одного до девяти, именно в таком порядке.'
+                    chosen_grid, chosen_grid_id = choose_grid(difficulty, user_id)
+                    users.chosen_grid = chosen_grid
+                    session.commit()
+                    start_condition_img(chosen_grid, res)
+                    res['response']['text'] = output_grid(chosen_grid)
                     return
             diff3 = False
             out = get_number(req['request']['original_utterance'].lower().split())
@@ -258,9 +328,9 @@ def handle_dialog(req, res):
                 res['response']['text'] = 'Неверный ход.'
                 return
             else:
-                chosen_grid = string_to_grid(chosen_grid)
-                if chosen_grid[out[1] - 1][out[0] - 1] != '.':
-                    res['response']['tts'] = 'Неверный ход.'
+                chosen_grid, solution = string_to_grid(chosen_grid, solution)
+                if chosen_grid[out[1] - 1][out[0] - 1] != '.' or int(solution[out[1] - 1][out[0] - 1]) != out[2]:
+                    res['response']['tts'] = 'Неверный ход, подумай ещё.'
                     res['response']['text'] = 'Неверный ход.'
                     return
                 else:
@@ -283,17 +353,13 @@ def handle_dialog(req, res):
                         finished = True
                         return
                     else:
-                        res['response']['text'] = ''
-                        for i in range(81):
-                            if i % 9 == 0 and i:
-                                res['response']['text'] = res['response']['text'] + '\n'
-                            res['response']['text'] = res['response']['text'] + chosen_grid[i]
+                        res['response']['text'] = output_grid(chosen_grid)
+                        choose_box((out[0], out[1]), str(out[2]), res)
                         return
 
         started = True
         if user_id not in facts_user.keys():
             facts_user[user_id] = 0
-        session = db_session.create_session()
         if not diff and started:
             diff = True
             diff2 = True
@@ -313,85 +379,19 @@ def handle_dialog(req, res):
             del res['response']['buttons'][0]
             if get_fact(user_id) == "Извини, но у меня нет больше фактов.":
                 del res['response']['buttons'][2]
-    elif 'помощь' in req['request']['original_utterance'].lower().split():
-        if started:
-            res['response']['text'] = 'Извини, но во время игры лучше не отвлекаться.'
-            res['response']['tts'] = 'Извини, но во время игры лучше не отвлекаться.'
-            return
-        res['response']['text'] = 'Правила просты:\n' \
-                                  '1) Заполни поле, используя только цифры от 1 до 9.\n' \
-                                  '2) Заполни поле так, чтобы ни в строке, ни в столбце,' \
-                                  ' ни в квадрате 3х3 не было одинаковых цифр.\n' \
-                                  '3) Веселись, думай, разработай свою тактику!'
-        res['response']['tts'] = 'Правила просты sil <[1000]> ' \
-                                  'Первое sil <[500]> Заполни поле, используя только цифры от 1 до 9.' \
-                                  'Второе sil <[500]> Заполни поле так, чтобы ни в строке, ни в столбце,' \
-                                  ' ни в квадрате 3х3 не было одинаковых цифр.' \
-                                  'Третье sil <[500]> Веселись, думай, разработай свою тактику!'
-        if user_id not in facts_user.keys():
-            facts_user[user_id] = 0
-        del res['response']['buttons'][2]
-        if get_fact(user_id) == "Извини, но у меня нет больше фактов.":
-            del res['response']['buttons'][2]
-    elif 'хватит' in req['request']['original_utterance'].lower().split():
-        if chosen:
-            session = db_session.create_session()
-            users.chosen_grid = chosen_grid
-            session.commit()
-        res['response']['text'] = 'Уже уходишь. Ну ладно, до новых встреч.'
-        res['response']['tts'] = 'Уже уходишь? Ну ладно, до новых встреч.'
-        res['response']['end_session'] = True
-        res['response']['buttons'] = []
-    elif 'факт' in req['request']['original_utterance'].lower().split():
-        if started:
-            res['response']['text'] = 'Не думаю, что во время игры стоит отвлекаться.'
-            res['response']['tts'] = 'Не думаю , что во время игры стоит отвлекаться.'
-            res['response']['end_session'] = False
-            return
-        res['response']['text'] = get_fact(user_id)
-        res['response']['tts'] = res['response']['text']
-        if res['response']['text'] == "Извини , но у меня нет больше фактов.":
-            del res['response']['buttons'][3]
-        res['response']['end_session'] = False
-    else:
-        res['response']['text'] = 'Я не расслышала, что ты сказал! Повтори, пожалуйста!'
-        res['response']['tts'] = 'Я не расслышала что ты сказал! Повтори пожалуйста!'
-        res['response']['buttons'] = [
-            {'title': 'Начать',
-             'hide': True},
-            {'title': 'Хватит',
-             'hide': True},
-            {'title': 'Помощь',
-             'hide': True},
-            {'title': 'Факт',
-             'hide': True}
-        ]
-
-
-# Функция возвращает две подсказки для ответа.
-def get_suggests(user_id):
-    session = sessionStorage[user_id]
-
-    # Выбираем две первые подсказки из массива.
-    suggests = [
-        {'title': suggest, 'hide': True}
-        for suggest in session['suggests'][:2]
+    res['response']['text'] = 'Я не расслышала, что ты сказал! Повтори, пожалуйста!'
+    res['response']['tts'] = 'Я не расслышала что ты сказал! Повтори пожалуйста!'
+    res['response']['buttons'] = [
+        {'title': 'Начать',
+         'hide': True},
+        {'title': 'Хватит',
+         'hide': True},
+        {'title': 'Помощь',
+         'hide': True},
+        {'title': 'Факт',
+         'hide': True}
     ]
-
-    # Убираем первую подсказку, чтобы подсказки менялись каждый раз.
-    session['suggests'] = session['suggests'][1:]
-    sessionStorage[user_id] = session
-
-    # Если осталась только одна подсказка, предлагаем подсказку
-    # со ссылкой на Яндекс.Маркет.
-    if len(suggests) < 2:
-        suggests.append({
-            "title": "Ладно",
-            "url": "https://market.yandex.ru/search?text=слон",
-            "hide": True
-        })
-
-    return suggests
+    return
 
 
 def get_fact(user_id):
@@ -403,16 +403,21 @@ def get_fact(user_id):
 
 
 def get_number(inp):
-    p = ['первый', 'второй', 'третий', 'четвертый', 'пятый', 'шестой', 'седьмой', 'восьмой', 'девятый']
     out = []
-    morhp = pymorphy2.MorphAnalyzer()
+    d = {'а': 0, 'б': 1, 'в': 2, 'г': 3, 'д': 4, 'е': 5, 'ж': 6, 'з': 7, 'и': 8}
     for i in range(len(inp)):
-        if morhp.parse(inp[i])[0].normal_form in p:
-            out.append(p.index(inp[i]) + 1)
-    return out
+        if not len(out):
+            if inp[i].is_alpha():
+                if len(inp[i]) == 1 and 'a' <= inp[i] <= 'и' and inp[i] != 'ё':
+                    out[0] = d[inp[i]]
+                    continue
+        if inp[i].is_digit() and len(out):
+            out.append(int(inp[i]))
+    return [out[1], out[0], out[2]]
 
 
 def choose_grid(dif, user_id):
+    global solution
     session = db_session.create_session()
     a = str(randint(1, 337))
     if not dif:
@@ -423,6 +428,7 @@ def choose_grid(dif, user_id):
         s = s + ' ' + a
         user.easy_used = s
         session.commit()
+        solution = session.query(EasyGrid).filter(EasyGrid.id == a).fisrt().solution
         chosen_gr = session.query(EasyGrid).filter(EasyGrid.id == a).first().grid
         chosen_ind = session.query(EasyGrid).filter(EasyGrid.id == a).first().id
         return chosen_gr, chosen_ind
@@ -434,6 +440,7 @@ def choose_grid(dif, user_id):
         s = s + ' ' + str(a)
         user.normal_used = s
         session.commit()
+        solution = session.query(NormalGrid).filter(NormalGrid.id == a).fisrt().solution
         chosen_gr = session.query(NormalGrid).filter(NormalGrid.id == a).first().grid
         chosen_ind = session.query(EasyGrid).filter(EasyGrid.id == a).first().id
         return chosen_gr, chosen_ind
@@ -445,16 +452,21 @@ def choose_grid(dif, user_id):
         s = s + ' ' + str(a)
         user.hard_used = s
         session.commit()
+        solution = session.query(HardGrid).filter(HardGrid.id == a).fisrt().solution
         chosen_gr = session.query(HardGrid).filter(HardGrid.id == a).first().grid
         chosen_ind = session.query(EasyGrid).filter(EasyGrid.id == a).first().id
         return chosen_gr, chosen_ind
 
 
-def string_to_grid(s):
+def string_to_grid(s, s2):
     res = []
+    res2 = []
     for i in range(9):
         res.append(s[i * 9:i * 9 + 9])
-    return res
+
+    for i in range(9):
+        res2.append(s2[i * 9:i * 9 + 9])
+    return res, res2
 
 
 def grid_to_string(s):
@@ -465,5 +477,74 @@ def grid_to_string(s):
     return res
 
 
+def output_grid(grid):
+    grid = grid.replace('.', '_')
+    p = ''
+    sch = 0
+    for i in range(19):
+        if i % 2 == 0:
+            p += '#' * 20 + '\n'
+        else:
+            p += '#'.join(grid[sch * 9:sch * 9 + 9]) + '\n'
+            sch += 1
+    return p
+
+
+def date_base_init():
+    app.config['SQLITE3_SETTINGS'] = {
+    'host': 'sudoku.sqlite'
+    }
+    if __name__ != '__main__':
+        app.root_path = os.path.dirname(os.path.abspath(__file__))
+        if sys.platform != 'win32':
+            app.config['SQLITE3_SETTINGS'] = {'host': '/home/Miximka/mysite/sudoku.sqlite'}
+    db_session.global_init(app.config['SQLITE3_SETTINGS']['host'])
+
+
+def choose_box(cords, parse, res):  # столбец строка
+    column = [175, 200, 225, 253, 281, 308, 337, 363, 390]
+    row = [22, 45, 70, 98, 123, 149, 177, 202, 229]
+    a = column[int(cords[0]) - 1]
+    b = row[int(cords[1]) - 1]
+    img1 = Image.open('/home/Miximka/mysite/img_test.png').convert('RGBA')
+    img2 = Image.open(f'/home/Miximka/mysite/{parse}.png').convert('RGBA')
+    img1.paste(img2, (a, b), img2)
+    img1.save('img_test.png')
+    img = yandex.downloadImageFile(img1)
+    res['response']['card'] = {}
+    res['response']['card']['type'] = 'BigImage'
+    res['response']['card']['image_id'] = img['id']
+    res['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
+                                       'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
+
+
+def start_condition_img(board, rez):
+    res = []
+    column = [175, 200, 225, 253, 281, 308, 337, 363, 390]
+    row = [22, 45, 70, 98, 123, 149, 177, 202, 229]
+    for i in range(9):
+        res.append(board[i * 9:i * 9 + 9])
+    img1 = Image.open('/home/Miximka/mysite/img_test.png').convert('RGBA')
+    for i in range(9):
+        for j in range(9):
+            if res[i][j] != '.':
+                a = row[i]
+                b = column[j]
+                img2 = Image.open(f'/home/Miximka/mysite/{res[i][j]}.png').convert('RGBA')
+                img1.paste(img2, (b, a), img2)
+                img1.save('/home/Miximka/mysite/img_test.png')
+    img = yandex.downloadImageFile(img1)
+    rez['response']['card'] = {}
+    rez['response']['card']['type'] = 'BigImage'
+    rez['response']['card']['image_id'] = img['id']
+    rez['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
+                                       'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
+
+
+
+def reload_image(plate):
+    pass
+
+
 if __name__ == '__main__':
-    app.run(port=8080, host='127.0.0.1')
+    app.run(host='127.0.0.1', port=8080)

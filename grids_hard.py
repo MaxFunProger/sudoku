@@ -9,6 +9,7 @@ class HardGrid(SqlAlchemyBase):
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     grid = sqlalchemy.Column(sqlalchemy.String, nullable=True)
+    solution = sqlalchemy.Column(sqlalchemy.String, nullable=True)
 
     def __repr__(self):
-        return '<HardGrid> {} {}>'.format(self.id, self.grid)
+        return '<HardGrid> {} {}>'.format(self.id, self.grid, self.solution)

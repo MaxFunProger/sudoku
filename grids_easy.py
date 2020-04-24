@@ -9,6 +9,7 @@ class EasyGrid(SqlAlchemyBase):
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True, autoincrement=True)
     grid = sqlalchemy.Column(sqlalchemy.String, nullable=True)
+    solution = sqlalchemy.Column(sqlalchemy.String, nullable=True)
 
     def __repr__(self):
-        return '<EasyGrid> {} {}>'.format(self.id, self.grid)
+        return '<EasyGrid> {} {}>'.format(self.id, self.grid, self.solution)

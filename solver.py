@@ -117,58 +117,67 @@ def normal_grid(board):
                         break
 
 
-f = open('sudoku_pool.txt')
-easy = open('easy_pool.txt', 'w')
-norm = open('normal_pool.txt', 'w')
-hard = open('hard_pool.txt', 'w')
-for v in range(1011):
-    s = f.readline().strip()
-    out = []
-    p = []
-    for i in range(81):
-        if len(p) == 9:
-            out.append(p[:])
-            p = []
-        if s[i] == '.':
-            p.append(s[i])
-        else:
-            p.append(int(s[i]))
-    out.append(p)
+easy = open('easy_pool.txt')
+norm = open('normal_pool.txt')
+hard = open('hard_pool.txt')
+e_solve = open('easy_solve.txt', 'w')
+n_solve = open('normal_solve.txt', 'w')
+h_solve = open('hard_solve.txt', 'w')
+
+for i in range(337):
+    s = easy.readline().strip()
     grid = [0] * 81
     given = [False] * 81
-    for i in range(81):
-        if s[i] != '.':
-            grid[i] = int(s[i])
-            given[i] = True
+    for j in range(81):
+        if s[j] != '.':
+            grid[j] = int(s[j])
+            given[j] = True
     box = []
     row = []
     column = []
     initiate()
     solve()
-    res = []
-    for i in range(9):
-        res.append(grid[i * 9:i * 9 + 9])
-    if v < 337:
-        easy_grid(out)
-    elif v < 674:
-        normal_grid(out)
-    s = ''
-    for i in out:
-        for j in i:
-            s = s + str(j)
-    if v < 337:
-        print(s, file=easy)
-        if v == 336:
-            print('Easy completed!')
-            easy.close()
-    elif v < 674:
-        print(s, file=norm)
-        if v == 673:
-            print('Normal completed!')
-            norm.close()
-    else:
-        print(s, file=hard)
-hard.close()
-print('Hard completed!')
-print('Done!')
-f.close()
+    res = ''
+    for j in range(81):
+        res += str(grid[j])
+    print(res, file=e_solve)
+e_solve.close()
+print('Easy finished!')
+for i in range(337):
+    s = norm.readline().strip()
+    grid = [0] * 81
+    given = [False] * 81
+    for j in range(81):
+        if s[j] != '.':
+            grid[j] = int(s[j])
+            given[j] = True
+    box = []
+    row = []
+    column = []
+    initiate()
+    solve()
+    res = ''
+    for j in range(81):
+        res += str(grid[j])
+    print(res, file=n_solve)
+n_solve.close()
+print('Normal finished!')
+for i in range(337):
+    s = hard.readline().strip()
+    grid = [0] * 81
+    given = [False] * 81
+    for j in range(81):
+        if s[j] != '.':
+            grid[j] = int(s[j])
+            given[j] = True
+    box = []
+    row = []
+    column = []
+    initiate()
+    solve()
+    res = ''
+    for j in range(81):
+        res += str(grid[j])
+    print(res, file=h_solve)
+h_solve.close()
+print('Hard finished!')
