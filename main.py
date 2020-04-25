@@ -136,10 +136,10 @@ def handle_dialog(req, res):
             res['response']['text'] = 'Привет! Это игра Судоку. Скажи начать для продолжения,' \
                                       ' хватит для завершения. Скажи помощь для того, чтобы узнать правила игры или факт ' \
                                       'для получения рандомного факта.'
-            res['response']['tts'] = 'Привет! Это игра Судоку. Скажи sil <[1000]> начать sil <[1000]> для продолжения,' \
-                                      ' sil <[1000]> хватит sil <[1000]> для завершения. Скажи sil <[1000]> помощь' \
-                                     ' sil <[1000]> для того,' \
-                                     ' чтобы узнать правила игры или sil <[1000]> факт sil <[1000]> ' \
+            res['response']['tts'] = 'Привет! Это игра Судоку. Скажи sil <[500]> начать sil <[500]> для продолжения,' \
+                                      ' sil <[500]> хватит sil <[500]> для завершения. Скажи sil <[500]> помощь' \
+                                     ' sil <[500]> для того,' \
+                                     ' чтобы узнать правила игры или sil <[500]> факт sil <[500]> ' \
                                       'для получения рандомного факта.'
 
             res['response']['buttons'] = [
@@ -162,6 +162,7 @@ def handle_dialog(req, res):
         res['response']['tts'] = 'Уже уходишь? Ну ладно, до новых встреч.'
         res['response']['end_session'] = True
         res['response']['buttons'] = []
+        return
     elif 'помощь' in req['request']['original_utterance'].lower().split():
         if started:
             res['response']['text'] = 'Извини, но во время игры лучше не отвлекаться.'
@@ -179,9 +180,17 @@ def handle_dialog(req, res):
                                   'Третье sil <[500]> Веселись, думай, разработай свою тактику!'
         if user_id not in facts_user.keys():
             facts_user[user_id] = 0
-        del res['response']['buttons'][2]
-        if get_fact(user_id) == "Извини, но у меня нет больше фактов.":
+        res['response']['buttons'] = [
+                {'title': 'Начать',
+                 'hide': True},
+                {'title': 'Хватит',
+                 'hide': True},
+                {'title': 'Факт',
+                 'hide': True}
+                ]
+        if facts_user[user_id] >= len(facts):
             del res['response']['buttons'][2]
+        return
     elif 'факт' in req['request']['original_utterance'].lower().split():
         if started:
             res['response']['text'] = 'Не думаю, что во время игры стоит отвлекаться.'
@@ -192,13 +201,26 @@ def handle_dialog(req, res):
         res['response']['tts'] = res['response']['text']
         if res['response']['text'] == "Извини , но у меня нет больше фактов.":
             del res['response']['buttons'][3]
+        else:
+            res['response']['buttons'] = [
+                {'title': 'Начать',
+                 'hide': True},
+                {'title': 'Хватит',
+                 'hide': True},
+                {'title': 'Помощь',
+                 'hide': True},
+                {'title': 'Факт',
+                 'hide': True}
+                ]
         res['response']['end_session'] = False
         return
 
     if users.chosen_grid and not diff:
+        session = db_session.create_session()
         chosen = True
         started = True
         chosen_grid = users.chosen_grid
+        solution = get_solve(difficulty, chosen_grid, user_id)
         diff = True
         res['response']['tts'] = 'С возвращением! Продолжаем играть!'
         res['response']['tts'] = 'С возвращением! Продолжаем играть!'
@@ -332,12 +354,9 @@ def handle_dialog(req, res):
                 return
             else:
                 chosen_grid, solution = string_to_grid(chosen_grid, solution)
-                f = open('/home/Miximka/mysite/wrong.txt', 'w')
-                print(solution, file=f)
-                f.close()
                 if chosen_grid[out[1] - 1][out[0] - 1] != '.' or int(solution[out[1] - 1][out[0] - 1]) != int(out[2]):
                     res['response']['tts'] = 'Неверный ход, подумай ещё.'
-                    res['response']['text'] = 'Неверный ход.'
+                    res['response']['text'] = 'Неверный ход :('
                     return
                 else:
                     chosen_grid[out[1] - 1] = chosen_grid[out[1] - 1][:out[0] - 1] + str(out[2]) + \
@@ -419,6 +438,8 @@ def get_number(inp):
                     continue
         if inp[i].isdigit() and len(out):
             out.append(int(inp[i]))
+    if len(out) < 3:
+        return [1]
     return [out[1], out[0] + 1, int(out[2])]
 
 
@@ -508,16 +529,11 @@ def date_base_init():
 
 
 def choose_box(cords, parse, res, users):  # столбец строка
-    session = db_session.create_session()
     column = [175, 200, 225, 253, 281, 308, 337, 363, 390]
     row = [22, 45, 70, 98, 123, 149, 177, 202, 229]
     a = column[int(cords[0]) - 1]
     b = row[int(cords[1]) - 1]
-    image = yandex.getLoadedImages()
-    url = ''
-    for i in image:
-        if i['id'] == users.image:
-            url = i['origUrl']
+    url = 'https://dialogs.yandex.net/skills/3f93126a-c42a-406d-bb04-086f2abe14d8/images/{}'.format(users.image)
     img1 = Image.open(url).convert('RGBA')
     img2 = Image.open(f'/home/Miximka/mysite/{parse}.png').convert('RGBA')
     img1.paste(img2, (a, b), img2)
@@ -543,6 +559,17 @@ def start_condition_img(id_, dif, rez):
     rez['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
                                        'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
     return img_id
+
+
+def get_solve(dif, chosen, user_id):
+    session = db_session.create_session()
+    used = int(session.query(User).filter(User.id == user_id).first().easy_used.split()[-1])
+    if not dif:
+        return session.query(EasyGrid).filter(EasyGrid.id == used).first().solution
+    elif dif == 1:
+        return session.query(NormalGrid).filter(NormalGrid.id == used).first().solution
+    else:
+        return session.query(HardGrid).filter(HardGrid.id == used).first().solution
 
 
 
