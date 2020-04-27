@@ -4,7 +4,6 @@ import logging
 import db_session
 import os
 import sys
-import pymorphy2
 from grids_easy import EasyGrid
 from grids_normal import NormalGrid
 from grids_hard import HardGrid
@@ -12,6 +11,8 @@ from users import User
 from random import randint
 from PIL import Image
 from YandexImages import YandexImages
+from urllib.request import urlopen
+from requests import get
 
 
 # библиотека, которая нам понадобится для работы с JSON
@@ -67,6 +68,7 @@ chosen_grid_id = None
 new_game = False
 diff4 = False
 solution = ''
+delete = False
 yandex = YandexImages()
 # loaded = yandex.getLoadedImages()
 # yandex.deleteImage(loaded['image']['id'])
@@ -94,7 +96,7 @@ def main():
 
 def handle_dialog(req, res):
     global started, diff, diff2, difficulty, chosen, diff3, chosen_grid, chosen_grid_id, finished,\
-        new_game, diff4, solution
+        new_game, diff4, solution, delete
     user_id = req['session']['user_id']
     session = db_session.create_session()
     users = session.query(User).filter(User.id == user_id).first()
@@ -102,6 +104,11 @@ def handle_dialog(req, res):
         check = 0
     else:
         check = 1
+    if finished and check:
+        users.image = ''
+        users.chosen_grid = ''
+        finished = False
+        session.commit()
     if req['session']['new']:
         started = False
         diff = False
@@ -114,7 +121,21 @@ def handle_dialog(req, res):
         chosen_grid_id = None
         new_game = False
         diff4 = False
+        delete = False
         solution = ''
+    if not started:
+        res['response']['buttons'] = [
+            {'title': 'Начать',
+             'hide': True},
+            {'title': 'Хватит',
+             'hide': True},
+            {'title': 'Помощь',
+             'hide': True},
+            {'title': 'Факт',
+             'hide': True}
+        ]
+    else:
+        res['response']['buttons'] = []
     if req['session']['new']:
         if not check:
             add_user = User()
@@ -155,10 +176,9 @@ def handle_dialog(req, res):
             return
     elif 'хватит' in req['request']['original_utterance'].lower().split():
         if chosen:
-            session = db_session.create_session()
             users.chosen_grid = chosen_grid
             session.commit()
-        res['response']['text'] = 'Уже уходишь. Ну ладно, до новых встреч.'
+        res['response']['text'] = 'Уже уходишь? Ну ладно, до новых встреч.'
         res['response']['tts'] = 'Уже уходишь? Ну ладно, до новых встреч.'
         res['response']['end_session'] = True
         res['response']['buttons'] = []
@@ -214,66 +234,7 @@ def handle_dialog(req, res):
                 ]
         res['response']['end_session'] = False
         return
-
-    if users.chosen_grid and not diff:
-        session = db_session.create_session()
-        chosen = True
-        started = True
-        chosen_grid = users.chosen_grid
-        solution = get_solve(difficulty, chosen_grid, user_id)
-        diff = True
-        res['response']['tts'] = 'С возвращением! Продолжаем играть!'
-        res['response']['tts'] = 'С возвращением! Продолжаем играть!'
-        res['response']['text'] = output_grid(chosen_grid)
-        res['response']['card'] = {}
-        res['response']['card']['type'] = 'BigImage'
-        res['response']['card']['image_id'] = users.image
-        res['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
-                                           'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
-        return
-
-    if not started:
-        res['response']['buttons'] = [
-            {'title': 'Начать',
-             'hide': True},
-            {'title': 'Хватит',
-             'hide': True},
-            {'title': 'Помощь',
-             'hide': True},
-            {'title': 'Факт',
-             'hide': True}
-        ]
-    else:
-        res['response']['buttons'] = []
-
-    if finished:
-        if 'новая игра' in req['request']['original_utterance'].lower():
-            started = False
-            diff = False
-            diff2 = False
-            difficulty = None
-            chosen = False
-            diff3 = False
-            chosen_grid = None
-            finished = False
-            chosen_grid_id = None
-            new_game = True
-            solution = ''
-        else:
-            started = False
-            diff = False
-            diff2 = False
-            difficulty = None
-            chosen = False
-            diff3 = False
-            chosen_grid = None
-            finished = False
-            chosen_grid_id = None
-            new_game = False
-            diff4 = False
-            solution = ''
-
-    if 'начать' in req['request']['original_utterance'].lower() or started or new_game:
+    elif 'начать' in req['request']['original_utterance'].lower().split() and 'заново' not in req['request']['original_utterance'].lower().split() or started or new_game:
         new_game = False
         if started:
             if diff2:
@@ -353,6 +314,10 @@ def handle_dialog(req, res):
                 res['response']['text'] = 'Неверный ход.'
                 return
             else:
+                if type(solution) != str:
+                    solution = grid_to_string(solution)
+                if type(chosen_grid) != str:
+                    chosen_grid = grid_to_string(chosen_grid)
                 chosen_grid, solution = string_to_grid(chosen_grid, solution)
                 if chosen_grid[out[1] - 1][out[0] - 1] != '.' or int(solution[out[1] - 1][out[0] - 1]) != int(out[2]):
                     res['response']['tts'] = 'Неверный ход, подумай ещё.'
@@ -374,14 +339,30 @@ def handle_dialog(req, res):
                                                   ' практиковаться больше, чтобы играть лучше!' \
                                                   ' Можешь сказать sil <[1000]> новая игра sil <[1000]> , чтобы ' \
                                                   'начать заново. Скажи sil <[1000]> хватит, чтобы завершить.'
-                        res['response']['text'] = 'Поздравляю, ты смог!'
+                        res['response']['text'] = 'Поздравляю, мой друг, ты смог!'
+                        res['response']['card'] = {}
+                        res['response']['card']['type'] = 'BigImage'
+                        res['response']['card']['image_id'] = yandex.downloadImageUrl(get('https://api.thecatapi.com/v1/images/search')[0]['url'])['id']
+                        res['response']['card']['title'] = 'Поздравляю, мой друг, ты смог!'
+                        started = False
+                        diff = False
+                        diff2 = False
+                        difficulty = None
+                        chosen = False
+                        diff3 = False
+                        chosen_grid = None
                         finished = True
+                        chosen_grid_id = None
+                        new_game = False
+                        diff4 = False
+                        solution = ''
+                        delete = False
                         return
                     else:
                         res['response']['text'] = output_grid(chosen_grid)
-                        choose_box((out[0], out[1]), str(out[2]), res, users)
+                        users.image = choose_box((out[0], out[1]), str(out[2]), res, users)
+                        session.commit()
                         return
-
         started = True
         if user_id not in facts_user.keys():
             facts_user[user_id] = 0
@@ -404,6 +385,36 @@ def handle_dialog(req, res):
             del res['response']['buttons'][0]
             if get_fact(user_id) == "Извини, но у меня нет больше фактов.":
                 del res['response']['buttons'][2]
+    elif 'новая' in req['request']['original_utterance'].lower() and 'игра' in req['request']['original_utterance'].lower() or 'начать' in req['request']['original_utterance'].lower() and 'заново' in req['request']['original_utterance'].lower() or 'заново' in req['request']['original_utterance'].lower():
+        started = False
+        diff = False
+        diff2 = False
+        difficulty = None
+        chosen = False
+        diff3 = False
+        chosen_grid = None
+        finished = False
+        chosen_grid_id = None
+        new_game = True
+        solution = ''
+        delete = False
+        users.chosen_grid = ''
+        users.image = ''
+        session.commit()
+    if users.chosen_grid and not diff:
+        chosen = True
+        started = True
+        chosen_grid = users.chosen_grid
+        solution = get_solve(difficulty, chosen_grid, user_id)
+        diff = True
+        res['response']['tts'] = 'С возвращением! Продолжаем играть!'
+        res['response']['text'] = output_grid(chosen_grid)
+        res['response']['card'] = {}
+        res['response']['card']['type'] = 'BigImage'
+        res['response']['card']['image_id'] = users.image
+        res['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
+                                           'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
+        return
     res['response']['text'] = 'Я не расслышала, что ты сказал! Повтори, пожалуйста!'
     res['response']['tts'] = 'Я не расслышала что ты сказал! Повтори пожалуйста!'
     res['response']['buttons'] = [
@@ -417,7 +428,6 @@ def handle_dialog(req, res):
          'hide': True}
     ]
     return
-
 
 def get_fact(user_id):
     if facts_user[user_id] < len(facts):
@@ -455,6 +465,7 @@ def choose_grid(dif, user_id):
         s = s + ' ' + a
         user.easy_used = s
         session.commit()
+        a = int(a)
         solution = session.query(EasyGrid).filter(EasyGrid.id == a).first().solution
         chosen_gr = session.query(EasyGrid).filter(EasyGrid.id == a).first().grid
         chosen_ind = session.query(EasyGrid).filter(EasyGrid.id == a).first().id
@@ -467,6 +478,7 @@ def choose_grid(dif, user_id):
         s = s + ' ' + str(a)
         user.normal_used = s
         session.commit()
+        a = int(a)
         solution = session.query(NormalGrid).filter(NormalGrid.id == a).fisrt().solution
         chosen_gr = session.query(NormalGrid).filter(NormalGrid.id == a).first().grid
         chosen_ind = session.query(EasyGrid).filter(EasyGrid.id == a).first().id
@@ -479,6 +491,7 @@ def choose_grid(dif, user_id):
         s = s + ' ' + str(a)
         user.hard_used = s
         session.commit()
+        a = int(a)
         solution = session.query(HardGrid).filter(HardGrid.id == a).fisrt().solution
         chosen_gr = session.query(HardGrid).filter(HardGrid.id == a).first().grid
         chosen_ind = session.query(EasyGrid).filter(EasyGrid.id == a).first().id
@@ -529,20 +542,24 @@ def date_base_init():
 
 
 def choose_box(cords, parse, res, users):  # столбец строка
+    global delete
     column = [175, 200, 225, 253, 281, 308, 337, 363, 390]
     row = [22, 45, 70, 98, 123, 149, 177, 202, 229]
     a = column[int(cords[0]) - 1]
     b = row[int(cords[1]) - 1]
-    url = 'https://dialogs.yandex.net/skills/3f93126a-c42a-406d-bb04-086f2abe14d8/images/{}'.format(users.image)
-    img1 = Image.open(url).convert('RGBA')
+    img1 = Image.open(urlopen(f'https://avatars.mds.yandex.net/get-dialogs-skill-card/{users.image}/orig')).convert('RGBA')
     img2 = Image.open(f'/home/Miximka/mysite/{parse}.png').convert('RGBA')
     img1.paste(img2, (a, b), img2)
-    img1.save(url)
+    img1.save('/home/Miximka/mysite/img_test.png')
+    x = yandex.downloadImageFile('/home/Miximka/mysite/img_test.png')['id']
     res['response']['card'] = {}
     res['response']['card']['type'] = 'BigImage'
-    res['response']['card']['image_id'] = users.image
+    res['response']['card']['image_id'] = x
     res['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
                                        'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
+    delete = True
+    return x
+
 
 
 def start_condition_img(id_, dif, rez):
@@ -572,9 +589,9 @@ def get_solve(dif, chosen, user_id):
         return session.query(HardGrid).filter(HardGrid.id == used).first().solution
 
 
-
 def reload_image(plate):
     pass
+
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080)

@@ -13,3 +13,4 @@ class User(SqlAlchemyBase):
     normal_used = sqlalchemy.Column(sqlalchemy.String, default='')
     hard_used = sqlalchemy.Column(sqlalchemy.String, default='')
     image = sqlalchemy.Column(sqlalchemy.String, default='')
+    binary = sqlalchemy.Column(sqlalchemy.String, default='')

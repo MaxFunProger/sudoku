@@ -11,6 +11,7 @@ class NormalGrid(SqlAlchemyBase):
     grid = sqlalchemy.Column(sqlalchemy.String, nullable=True)
     solution = sqlalchemy.Column(sqlalchemy.String, nullable=True)
     image = sqlalchemy.Column(sqlalchemy.String, default='')
+    binary = sqlalchemy.Column(sqlalchemy.String, default='')
 
     def __repr__(self):
         return '<NormalGrid> {} {}>'.format(self.id, self.grid, self.solution)
