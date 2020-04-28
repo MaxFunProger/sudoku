@@ -7,6 +7,7 @@ from YandexImages import YandexImages
 from urllib.request import urlopen
 from requests import post, get
 import json
+import io
 
 
 db_session.global_init('sudoku.sqlite')
@@ -35,26 +36,13 @@ d = b'iVBORw0KGgoAAAANSUhEUgAAAkYAAAECCAYAAAAb/BiLAACWw0lEQVR4nO29eVgUV9r3/63em0
 yandex = YandexImages()
 yandex.set_auth_token('AgAAAAAqHEs_AAT7o7tmP0cMDkczmxBtEz1jnOM')
 
-
-
-
-'''----------
-----------
-Begin
-1030494/f465584352d83d99ff8d
-
-1030494/f465584352d83d99ff8d
-----------
-BOX
-1540737/6fd62856c9a0b5220fad
-
-1030494/f465584352d83d99ff8d
-----------
-BOX
-1030494/85e5ad6388514fac38bb
-
-'''
-urlopen(get('https://api.thecatapi.com/v1/images/search').json()[0]['url'])
-
+k = open('first.jpg', 'rb')
+print(k)
+'''f = Image.open('four.jpg').convert('RGBA')
+f2 = Image.open('digits/1.png').convert('RGBA')
+f.paste(f2, (1, 1), f2)
+f = f.tobytes()
+print(f)
+print(yandex.downloadImageImage(f)['id'])'''
 
 

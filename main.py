@@ -15,6 +15,7 @@ from urllib.request import urlopen
 from requests import get
 
 
+
 # библиотека, которая нам понадобится для работы с JSON
 import json
 
@@ -56,8 +57,11 @@ facts = ['Бертхам Фельгенхауэр установил, что м�
          'Первый всемирный чемпионат по судоку прошел в Италии в городе Лука в 2006 году.'
          ' Первым победителем стала Яна Тилова из Чехии.',
          'Решения судоку должны находиться логически, а не перебором или угадыванием!']
+cats = ['213044/727f46a6589e927ea547', '1030494/0444ee843b32719ed9e1',
+        '1030494/d5331e4641a4808ba8aa', '1652229/3ca647181ecc7547f1e7']
 started = False
 diff = False
+old = ''
 diff2 = False
 difficulty = None
 chosen = False
@@ -96,7 +100,7 @@ def main():
 
 def handle_dialog(req, res):
     global started, diff, diff2, difficulty, chosen, diff3, chosen_grid, chosen_grid_id, finished,\
-        new_game, diff4, solution, delete
+        new_game, diff4, solution, delete, old
     user_id = req['session']['user_id']
     session = db_session.create_session()
     users = session.query(User).filter(User.id == user_id).first()
@@ -123,7 +127,7 @@ def handle_dialog(req, res):
         diff4 = False
         delete = False
         solution = ''
-    if not started:
+    if not started and not new_game:
         res['response']['buttons'] = [
             {'title': 'Начать',
              'hide': True},
@@ -154,8 +158,8 @@ def handle_dialog(req, res):
                 ]
             }
             facts_user[user_id] = 0
-            res['response']['text'] = 'Привет! Это игра Судоку. Скажи начать для продолжения,' \
-                                      ' хватит для завершения. Скажи помощь для того, чтобы узнать правила игры или факт ' \
+            res['response']['text'] = 'Привет! Это игра Судоку. Скажи <начать> для продолжения,' \
+                                      ' <хватит> для завершения. Скажи <помощь> для того, чтобы узнать правила игры или <факт> ' \
                                       'для получения рандомного факта.'
             res['response']['tts'] = 'Привет! Это игра Судоку. Скажи sil <[500]> начать sil <[500]> для продолжения,' \
                                       ' sil <[500]> хватит sil <[500]> для завершения. Скажи sil <[500]> помощь' \
@@ -183,33 +187,67 @@ def handle_dialog(req, res):
         res['response']['end_session'] = True
         res['response']['buttons'] = []
         return
-    elif 'помощь' in req['request']['original_utterance'].lower().split():
-        if started:
-            res['response']['text'] = 'Извини, но во время игры лучше не отвлекаться.'
-            res['response']['tts'] = 'Извини, но во время игры лучше не отвлекаться.'
-            return
-        res['response']['text'] = 'Правила просты:\n' \
-                                  '1) Заполни поле, используя только цифры от 1 до 9.\n' \
-                                  '2) Заполни поле так, чтобы ни в строке, ни в столбце,' \
-                                  ' ни в квадрате 3х3 не было одинаковых цифр.\n' \
-                                  '3) Веселись, думай, разработай свою тактику!'
-        res['response']['tts'] = 'Правила просты sil <[1000]> ' \
-                                  'Первое sil <[500]> Заполни поле, используя только цифры от 1 до 9.' \
-                                  'Второе sil <[500]> Заполни поле так, чтобы ни в строке, ни в столбце,' \
-                                  ' ни в квадрате 3х3 не было одинаковых цифр.' \
-                                  'Третье sil <[500]> Веселись, думай, разработай свою тактику!'
-        if user_id not in facts_user.keys():
-            facts_user[user_id] = 0
+    elif 'убери' in req['request']['original_utterance'].lower():
+        started = False
+        diff = False
+        diff2 = False
+        difficulty = None
+        chosen = False
+        diff3 = False
+        chosen_grid = None
+        finished = False
+        chosen_grid_id = None
+        new_game = False
+        solution = ''
+        delete = False
+        users.chosen_grid = ''
+        users.image = ''
+        session.commit()
+        res['response']['text'] = 'Хорошо, убрала. Что дальше?'
+        res['response']['tts'] = 'Хорошо , убрала. Что дальше?'
         res['response']['buttons'] = [
                 {'title': 'Начать',
                  'hide': True},
                 {'title': 'Хватит',
                  'hide': True},
+                {'title': 'Помощь',
+                 'hide': True},
                 {'title': 'Факт',
                  'hide': True}
                 ]
-        if facts_user[user_id] >= len(facts):
-            del res['response']['buttons'][2]
+        return
+    elif 'помощь' in req['request']['original_utterance'].lower() or 'умеешь' in req['request']['original_utterance'].lower():
+        res['response']['text'] = 'Правила просты:\n' \
+                                  '1) Заполни поле, используя только цифры от 1 до 9.\n' \
+                                  '2) Заполни поле так, чтобы ни в строке, ни в столбце,' \
+                                  ' ни в квадрате 3х3 не было одинаковых цифр.\n' \
+                                  '3) Для того, чтобы сделать ход, просто назови букву строки, номер столбца и цифру.' \
+                                  ' Например: Е 5 9.\n' \
+                                  '4) Скажи <начать> для запуска игры.\n' \
+                                  '5) Скажи <новая игра>, чтобы начать заново новое поле.\n' \
+                                  '6) Скажи <убери>, чтобы сбросить поле и перейти на главную.\n' \
+                                  '7) Скажи <хватит> для выхода.\n' \
+                                  '8) Веселись, думай, разработай свою тактику!'
+        res['response']['tts'] = 'Правила просты sil <[1000]> ' \
+                                  'Первое sil <[500]> Заполни поле, используя только цифры от 1 до 9.' \
+                                  'Второе sil <[500]> Заполни поле так, чтобы ни в строке, ни в столбце,' \
+                                  ' ни в квадрате 3х3 не было одинаковых цифр.' \
+                                  'Третье sil <[500]> Для того, чтобы сделать ход, просто назови букву строки, номер столбца и цифру.' \
+                                  'Четвёртое sil <[500]> Веселись, думай, разработай свою тактику!'
+        if user_id not in facts_user.keys():
+            facts_user[user_id] = 0
+        if not started:
+            res['response']['buttons'] = [
+                    {'title': 'Начать',
+                     'hide': True},
+                    {'title': 'Хватит',
+                     'hide': True},
+                    {'title': 'Факт',
+                     'hide': True}
+                    ]
+            if facts_user[user_id] >= len(facts):
+                del res['response']['buttons'][2]
+            return
         return
     elif 'факт' in req['request']['original_utterance'].lower().split():
         if started:
@@ -234,7 +272,23 @@ def handle_dialog(req, res):
                 ]
         res['response']['end_session'] = False
         return
-    elif 'начать' in req['request']['original_utterance'].lower().split() and 'заново' not in req['request']['original_utterance'].lower().split() or started or new_game:
+    elif 'новая' in req['request']['original_utterance'].lower() and 'игра' in req['request']['original_utterance'].lower() or 'начать' in req['request']['original_utterance'].lower() and 'заново' in req['request']['original_utterance'].lower() or 'заново' in req['request']['original_utterance'].lower():
+        started = False
+        diff = False
+        diff2 = False
+        difficulty = None
+        chosen = False
+        diff3 = False
+        chosen_grid = None
+        finished = False
+        chosen_grid_id = None
+        new_game = True
+        solution = ''
+        delete = False
+        users.chosen_grid = ''
+        users.image = ''
+        session.commit()
+    if 'начать' in req['request']['original_utterance'].lower().split() and 'заново' not in req['request']['original_utterance'].lower().split() or started or new_game:
         new_game = False
         if started:
             if diff2:
@@ -342,8 +396,9 @@ def handle_dialog(req, res):
                         res['response']['text'] = 'Поздравляю, мой друг, ты смог!'
                         res['response']['card'] = {}
                         res['response']['card']['type'] = 'BigImage'
-                        res['response']['card']['image_id'] = yandex.downloadImageUrl(get('https://api.thecatapi.com/v1/images/search')[0]['url'])['id']
+                        res['response']['card']['image_id'] = cats[randint(0, 3)]
                         res['response']['card']['title'] = 'Поздравляю, мой друг, ты смог!'
+                        res['response']['card']['description'] = 'Для начала новой игры скажи <новая игра>.'
                         started = False
                         diff = False
                         diff2 = False
@@ -360,8 +415,15 @@ def handle_dialog(req, res):
                         return
                     else:
                         res['response']['text'] = output_grid(chosen_grid)
+                        if delete:
+                            old = users.image
+                        else:
+                            delete = True
                         users.image = choose_box((out[0], out[1]), str(out[2]), res, users)
                         session.commit()
+                        if old:
+                            yandex.deleteImage(old)
+                            old = ''
                         return
         started = True
         if user_id not in facts_user.keys():
@@ -385,23 +447,8 @@ def handle_dialog(req, res):
             del res['response']['buttons'][0]
             if get_fact(user_id) == "Извини, но у меня нет больше фактов.":
                 del res['response']['buttons'][2]
-    elif 'новая' in req['request']['original_utterance'].lower() and 'игра' in req['request']['original_utterance'].lower() or 'начать' in req['request']['original_utterance'].lower() and 'заново' in req['request']['original_utterance'].lower() or 'заново' in req['request']['original_utterance'].lower():
-        started = False
-        diff = False
-        diff2 = False
-        difficulty = None
-        chosen = False
-        diff3 = False
-        chosen_grid = None
-        finished = False
-        chosen_grid_id = None
-        new_game = True
-        solution = ''
-        delete = False
-        users.chosen_grid = ''
-        users.image = ''
-        session.commit()
     if users.chosen_grid and not diff:
+        res['response']['buttons'] = []
         chosen = True
         started = True
         chosen_grid = users.chosen_grid
@@ -412,8 +459,8 @@ def handle_dialog(req, res):
         res['response']['card'] = {}
         res['response']['card']['type'] = 'BigImage'
         res['response']['card']['image_id'] = users.image
-        res['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
-                                           'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
+        res['response']['card']['title'] = 'Строки: А, Б, В, Г, Д, Е, Ж, З, И\n' \
+                                           'Столбцы: 1, 2, 3, 4, 5, 6, 7, 8, 9'
         return
     res['response']['text'] = 'Я не расслышала, что ты сказал! Повтори, пожалуйста!'
     res['response']['tts'] = 'Я не расслышала что ты сказал! Повтори пожалуйста!'
@@ -451,6 +498,7 @@ def get_number(inp):
     if len(out) < 3:
         return [1]
     return [out[1], out[0] + 1, int(out[2])]
+
 
 
 def choose_grid(dif, user_id):
@@ -550,8 +598,10 @@ def choose_box(cords, parse, res, users):  # столбец строка
     img1 = Image.open(urlopen(f'https://avatars.mds.yandex.net/get-dialogs-skill-card/{users.image}/orig')).convert('RGBA')
     img2 = Image.open(f'/home/Miximka/mysite/{parse}.png').convert('RGBA')
     img1.paste(img2, (a, b), img2)
-    img1.save('/home/Miximka/mysite/img_test.png')
-    x = yandex.downloadImageFile('/home/Miximka/mysite/img_test.png')['id']
+    mas = ['img_test', 'test_1', 'test_2', 'test_3', 'test_4', 'test_5', 'test_6', 'test_7', 'test_8']
+    k = mas[randint(0, 8)]
+    img1.save(f'/home/Miximka/mysite/{k}.png')
+    x = yandex.downloadImageFile(f'/home/Miximka/mysite/{k}.png')['id']
     res['response']['card'] = {}
     res['response']['card']['type'] = 'BigImage'
     res['response']['card']['image_id'] = x
@@ -559,7 +609,6 @@ def choose_box(cords, parse, res, users):  # столбец строка
                                        'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
     delete = True
     return x
-
 
 
 def start_condition_img(id_, dif, rez):

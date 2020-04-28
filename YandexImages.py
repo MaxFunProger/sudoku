@@ -96,6 +96,15 @@ class YandexImages(object):
             return content['image']
         return None
 
+
+    def downloadImageImage(self, img):
+        path = 'skills/{skills_id}/images'.format(skills_id=self.skills)
+        result = self.SESSION.post(url=self.API_URL+path, files={'file': ('first.jpg', img)})
+        content = self.validate_api_response(result)
+        if content is not None:
+            return content['image']
+        return None
+
     ################################################
     # Просмотр всех загруженных изображений        #
     #                                              #
