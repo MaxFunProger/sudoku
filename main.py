@@ -40,8 +40,8 @@ logging.basicConfig(level=logging.INFO)
 # Такая запись говорит, что мы показали пользователю эти три подсказки.
 # Когда он откажется купить слона,
 # то мы уберем одну подсказку. Как будто что-то меняется :)
-sessionStorage = {}
-facts_user = {}
+sessionStorage = dict()
+facts_user = dict()
 facts = ['Бертхам Фельгенхауэр установил, что можно составить 6670903752021072936960 различных судоку!',
          'Ученые установили, что умственные упражнения, в том числе решение судоку,'
          ' способны сократить возраст мозга пожилых людей. Это приводит к улучшению памяти и'
@@ -59,20 +59,7 @@ facts = ['Бертхам Фельгенхауэр установил, что м�
          'Решения судоку должны находиться логически, а не перебором или угадыванием!']
 cats = ['213044/727f46a6589e927ea547', '1030494/0444ee843b32719ed9e1',
         '1030494/d5331e4641a4808ba8aa', '1652229/3ca647181ecc7547f1e7']
-started = False
-diff = False
-old = ''
-diff2 = False
-difficulty = None
-chosen = False
-diff3 = False
-chosen_grid = None
-finished = False
-chosen_grid_id = None
-new_game = False
-diff4 = False
-solution = ''
-delete = False
+params = dict()
 yandex = YandexImages()
 # loaded = yandex.getLoadedImages()
 # yandex.deleteImage(loaded['image']['id'])
@@ -99,35 +86,55 @@ def main():
 
 
 def handle_dialog(req, res):
-    global started, diff, diff2, difficulty, chosen, diff3, chosen_grid, chosen_grid_id, finished,\
-        new_game, diff4, solution, delete, old
+    global params
+    f = open('/home/Miximka/mysite/wrong.txt', 'w')
+    print('dfgdsdf', file=f)
+    f.close()
     user_id = req['session']['user_id']
+    if user_id not in params.keys():
+        params[user_id] = {'user_id': req['session']['user_id'],
+                            'started': False,
+                            'diff': False,
+                            'old': '',
+                            'diff2': False,
+                            'difficulty': None,
+                            'chosen': False,
+                            'diff3': False,
+                            'chosen_grid': None,
+                            'finished': False,
+                            'chosen_grid_id': None,
+                            'new_game': False,
+                            'diff4': False,
+                            'solution': '',
+                            'delete': False,
+                            'check': False
+                            }
     session = db_session.create_session()
     users = session.query(User).filter(User.id == user_id).first()
     if users is None:
-        check = 0
+        params[user_id]['check'] = 0
     else:
-        check = 1
-    if finished and check:
+        params[user_id]['check'] = 1
+    if params[user_id]['finished'] and params[user_id]['check']:
         users.image = ''
         users.chosen_grid = ''
-        finished = False
+        params[user_id]['finished'] = False
         session.commit()
     if req['session']['new']:
-        started = False
-        diff = False
-        diff2 = False
-        difficulty = None
-        chosen = False
-        diff3 = False
-        chosen_grid = None
-        finished = False
-        chosen_grid_id = None
-        new_game = False
-        diff4 = False
-        delete = False
-        solution = ''
-    if not started and not new_game:
+        params[user_id]['started'] = False
+        params[user_id]['diff'] = False
+        params[user_id]['diff2'] = False
+        params[user_id]['difficulty'] = None
+        params[user_id]['chosen'] = False
+        params[user_id]['diff3'] = False
+        params[user_id]['chosen_grid'] = None
+        params[user_id]['finished'] = False
+        params[user_id]['chosen_grid_id'] = None
+        params[user_id]['new_game'] = False
+        params[user_id]['diff4'] = False
+        params[user_id]['delete'] = False
+        params[user_id]['solution'] = ''
+    if not params[user_id]['started'] and not params[user_id]['new_game']:
         res['response']['buttons'] = [
             {'title': 'Начать',
              'hide': True},
@@ -141,7 +148,7 @@ def handle_dialog(req, res):
     else:
         res['response']['buttons'] = []
     if req['session']['new']:
-        if not check:
+        if not params[user_id]['check']:
             add_user = User()
             if session.query(User).filter(User.id == user_id).first() is None:
                 add_user.id = user_id
@@ -149,7 +156,7 @@ def handle_dialog(req, res):
                 session.commit()
                 users = session.query(User).filter(User.id == user_id).first()
         if not users.chosen_grid:
-            sessionStorage[user_id] = {
+            sessionStorage[params[user_id]['user_id']] = {
                 'suggests': [
                     "Начать",
                     "Хватит",
@@ -157,7 +164,7 @@ def handle_dialog(req, res):
                     "Факт"
                 ]
             }
-            facts_user[user_id] = 0
+            facts_user[params[user_id]['user_id']] = 0
             res['response']['text'] = 'Привет! Это игра Судоку. Скажи <начать> для продолжения,' \
                                       ' <хватит> для завершения. Скажи <помощь> для того, чтобы узнать правила игры или <факт> ' \
                                       'для получения рандомного факта.'
@@ -178,31 +185,51 @@ def handle_dialog(req, res):
                  'hide': True}
                 ]
             return
-    elif 'хватит' in req['request']['original_utterance'].lower().split():
-        if chosen:
-            users.chosen_grid = chosen_grid
+    elif 'хватит' in req['request']['original_utterance'].lower().split() or 'хватит' in req['request']['command'].lower().split():
+        if params[user_id]['chosen']:
+            users.chosen_grid = params[user_id]['chosen_grid']
             session.commit()
+            gr = session.query(EasyGrid).filter(EasyGrid.image == users.image).first()
+            if gr is None:
+                gr = session.query(NormalGrid).filter(NormalGrid.image == users.image).first()
+            if gr is None:
+                gr = session.query(HardGrid).filter(HardGrid.image == users.image).first()
+            if gr is None and users.image:
+                params[user_id]['delete'] = True
+            if params[user_id]['delete']:
+                yandex.deleteImage(users.image)
+                params[user_id]['delete'] = False
         res['response']['text'] = 'Уже уходишь? Ну ладно, до новых встреч.'
         res['response']['tts'] = 'Уже уходишь? Ну ладно, до новых встреч.'
         res['response']['end_session'] = True
         res['response']['buttons'] = []
         return
-    elif 'убери' in req['request']['original_utterance'].lower():
-        started = False
-        diff = False
-        diff2 = False
-        difficulty = None
-        chosen = False
-        diff3 = False
-        chosen_grid = None
-        finished = False
-        chosen_grid_id = None
-        new_game = False
-        solution = ''
-        delete = False
+    elif 'убери' in req['request']['original_utterance'].lower() or 'убери' in req['request']['command'].lower():
+        params[user_id]['started'] = False
+        params[user_id]['diff'] = False
+        params[user_id]['diff2'] = False
+        params[user_id]['difficulty'] = None
+        params[user_id]['chosen'] = False
+        params[user_id]['diff3'] = False
+        params[user_id]['chosen_grid'] = None
+        params[user_id]['finished'] = False
+        params[user_id]['chosen_grid_id'] = None
+        params[user_id]['new_game'] = False
+        params[user_id]['solution'] = ''
+        params[user_id]['delete'] = False
         users.chosen_grid = ''
         users.image = ''
         session.commit()
+        gr = session.query(EasyGrid).filter(EasyGrid.image == users.image).first()
+        if gr is None:
+            gr = session.query(NormalGrid).filter(NormalGrid.image == users.image).first()
+        if gr is None:
+            gr = session.query(HardGrid).filter(HardGrid.image == users.image).first()
+        if gr is None and users.image:
+            params[user_id]['delete'] = True
+        if params[user_id]['delete']:
+            yandex.deleteImage(users.image)
+            params[user_id]['delete'] = False
         res['response']['text'] = 'Хорошо, убрала. Что дальше?'
         res['response']['tts'] = 'Хорошо , убрала. Что дальше?'
         res['response']['buttons'] = [
@@ -216,7 +243,7 @@ def handle_dialog(req, res):
                  'hide': True}
                 ]
         return
-    elif 'помощь' in req['request']['original_utterance'].lower() or 'умеешь' in req['request']['original_utterance'].lower():
+    elif 'помощь' in req['request']['original_utterance'].lower() or 'помощь' in req['request']['command'].lower() or 'умеешь' in req['request']['original_utterance'].lower() or 'умеешь' in req['request']['command'].lower():
         res['response']['text'] = 'Правила просты:\n' \
                                   '1) Заполни поле, используя только цифры от 1 до 9.\n' \
                                   '2) Заполни поле так, чтобы ни в строке, ни в столбце,' \
@@ -233,10 +260,14 @@ def handle_dialog(req, res):
                                   'Второе sil <[500]> Заполни поле так, чтобы ни в строке, ни в столбце,' \
                                   ' ни в квадрате 3х3 не было одинаковых цифр.' \
                                   'Третье sil <[500]> Для того, чтобы сделать ход, просто назови букву строки, номер столбца и цифру.' \
-                                  'Четвёртое sil <[500]> Веселись, думай, разработай свою тактику!'
+                                  'Четвёртое sil <[500]> Скажи sil <[500]> начать sil <[500]> для запуска игры.' \
+                                  'Пятое sil <[500]> Скажи sil <[500]> новая игра sil <[500]> чтобы начать заново новое поле.' \
+                                  'Шестое sil <[500]> Скажи sil <[500]> убери sil <[500]> чтобы сбросить поле и перейти на главную' \
+                                  'Седьмое sil <[500]> Скажи sil <[500]> хватит sil <[500]> для выхода.' \
+                                  'Восьмое sil <[500]> Веселись, думай, разработай свою тактику!'
         if user_id not in facts_user.keys():
             facts_user[user_id] = 0
-        if not started:
+        if not params[user_id]['started']:
             res['response']['buttons'] = [
                     {'title': 'Начать',
                      'hide': True},
@@ -249,13 +280,13 @@ def handle_dialog(req, res):
                 del res['response']['buttons'][2]
             return
         return
-    elif 'факт' in req['request']['original_utterance'].lower().split():
-        if started:
+    elif 'факт' in req['request']['original_utterance'].lower().split() or 'факт' in req['request']['command'].lower().split():
+        if params[user_id]['started']:
             res['response']['text'] = 'Не думаю, что во время игры стоит отвлекаться.'
             res['response']['tts'] = 'Не думаю , что во время игры стоит отвлекаться.'
             res['response']['end_session'] = False
             return
-        res['response']['text'] = get_fact(user_id)
+        res['response']['text'] = get_fact(params[user_id]['user_id'])
         res['response']['tts'] = res['response']['text']
         if res['response']['text'] == "Извини , но у меня нет больше фактов.":
             del res['response']['buttons'][3]
@@ -272,54 +303,36 @@ def handle_dialog(req, res):
                 ]
         res['response']['end_session'] = False
         return
-    elif 'новая' in req['request']['original_utterance'].lower() and 'игра' in req['request']['original_utterance'].lower() or 'начать' in req['request']['original_utterance'].lower() and 'заново' in req['request']['original_utterance'].lower() or 'заново' in req['request']['original_utterance'].lower():
-        started = False
-        diff = False
-        diff2 = False
-        difficulty = None
-        chosen = False
-        diff3 = False
-        chosen_grid = None
-        finished = False
-        chosen_grid_id = None
-        new_game = True
-        solution = ''
-        delete = False
+    elif ('новая' in req['request']['original_utterance'].lower() and 'игра' in req['request']['original_utterance'].lower() or 'начать' in req['request']['original_utterance'].lower() and 'заново' in req['request']['original_utterance'].lower() or 'заново' in req['request']['original_utterance'].lower()) or ('новая' in req['request']['command'].lower() and 'игра' in req['request']['command'].lower() or 'начать' in req['request']['command'].lower() and 'заново' in req['request']['command'].lower() or 'заново' in req['request']['command'].lower()):
+        params[user_id]['started'] = False
+        params[user_id]['diff'] = False
+        params[user_id]['diff2'] = False
+        params[user_id]['difficulty'] = None
+        params[user_id]['chosen'] = False
+        params[user_id]['diff3'] = False
+        params[user_id]['chosen_grid'] = None
+        params[user_id]['finished'] = False
+        params[user_id]['chosen_grid_id'] = None
+        params[user_id]['new_game'] = True
+        params[user_id]['solution'] = ''
+        params[user_id]['delete'] = False
         users.chosen_grid = ''
         users.image = ''
         session.commit()
-    if 'начать' in req['request']['original_utterance'].lower().split() and 'заново' not in req['request']['original_utterance'].lower().split() or started or new_game:
-        new_game = False
-        if started:
-            if diff2:
-                diff2 = False
-                prev = False
-                for i in req['request']['original_utterance'].lower().split():
-                    if i == 'не':
-                        prev = True
-                        continue
-                    else:
-                        prev = False
+    if 'начать' in req['request']['original_utterance'].lower().split() and 'заново' not in req['request']['original_utterance'].lower().split() or params[user_id]['started'] or params[user_id]['new_game'] or 'начать' in req['request']['command'].lower().split() and 'заново' not in req['request']['command'].lower().split():
+        params[user_id]['new_game'] = False
+        if params[user_id]['started']:
+            if params[user_id]['diff2']:
+                params[user_id]['diff2'] = False
+                for i in req['request']['command'].lower().split():
                     if 'легкий' in i or 'лёгкий' in i:
-                        if prev:
-                            difficulty = 1
-                        else:
-                            difficulty = 0
-                        break
+                        params[user_id]['difficulty'] = 0
                     elif 'нормальный' in i:
-                        if prev:
-                            difficulty = 2
-                        else:
-                            difficulty = 1
-                        break
+                        params[user_id]['difficulty'] = 1
                     elif 'сложный' in i:
-                        if prev:
-                            difficulty = 1
-                        else:
-                            difficulty = 2
-                        break
-                if difficulty is None:
-                    diff2 = True
+                        params[user_id]['difficulty'] = 2
+                if params[user_id]['difficulty'] is None:
+                    params[user_id]['diff2'] = True
                     res['response']['text'] = 'Не совсем поняла тебя. Повтори, пожалуйста!'
                     res['response']['tts'] = 'Не  совсем поняла тебя . Повтри , пожалуйста!'
                     res['response']['buttons'] = [
@@ -332,27 +345,27 @@ def handle_dialog(req, res):
                     ]
                     return
                 else:
-                    diff3 = True
-                    diff4 = True
-            if diff3:
-                if diff4:
-                    diff4 = False
+                    params[user_id]['diff3'] = True
+                    params[user_id]['diff4'] = True
+            if params[user_id]['diff3']:
+                if params[user_id]['diff4']:
+                    params[user_id]['diff4'] = False
                     res['response']['tts'] = 'Начнем игру . Перед тобой исходное поле .' \
                                              ' Твоя цель - заполнить его цифрми от одного до девяти так ,' \
                                              ' чтобы в одной строке , одном столбце и в каждом квадрате' \
                                              ' три на три не было одинаковых цифр . Для совершения хода' \
                                              ' назови букву строки , ' \
                                              'номер столбца и нужную цифру от одного до девяти, именно в таком порядке.'
-                    chosen_grid, chosen_grid_id, solution = choose_grid(difficulty, user_id)
-                    users.chosen_grid = chosen_grid
+                    params[user_id]['chosen_grid'], params[user_id]['chosen_grid_id'], params[user_id]['solution'] = choose_grid(params[user_id]['difficulty'], params[user_id]['user_id'])
+                    users.chosen_grid = params[user_id]['chosen_grid']
                     session.commit()
-                    a = start_condition_img(chosen_grid_id, difficulty, res)
+                    a = start_condition_img(params[user_id]['chosen_grid_id'], params[user_id]['difficulty'], res)
                     users.image = a
                     session.commit()
-                    res['response']['text'] = output_grid(chosen_grid)
+                    res['response']['text'] = output_grid(params[user_id]['chosen_grid'])
                     return
-            diff3 = False
-            out = get_number(req['request']['original_utterance'].lower().split())
+            params[user_id]['diff3'] = False
+            out = get_number(req['request']['command'].lower().split())
             if len(out) != 3:
                 res['response']['text'] = 'Я тебя не понимаю! Повтори еще раз!'
                 res['response']['tts'] = 'Я тебя не понимаю! Повтори еще раз!'
@@ -368,26 +381,26 @@ def handle_dialog(req, res):
                 res['response']['text'] = 'Неверный ход.'
                 return
             else:
-                if type(solution) != str:
-                    solution = grid_to_string(solution)
-                if type(chosen_grid) != str:
-                    chosen_grid = grid_to_string(chosen_grid)
-                chosen_grid, solution = string_to_grid(chosen_grid, solution)
-                if chosen_grid[out[1] - 1][out[0] - 1] != '.' or int(solution[out[1] - 1][out[0] - 1]) != int(out[2]):
+                if type(params[user_id]['solution']) != str:
+                    params[user_id]['solution'] = grid_to_string(params[user_id]['solution'])
+                if type(params[user_id]['chosen_grid']) != str:
+                    params[user_id]['chosen_grid'] = grid_to_string(params[user_id]['chosen_grid'])
+                params[user_id]['chosen_grid'], params[user_id]['solution'] = string_to_grid(params[user_id]['chosen_grid'], params[user_id]['solution'])
+                if params[user_id]['chosen_grid'][out[1] - 1][out[0] - 1] != '.' or int(params[user_id]['solution'][out[1] - 1][out[0] - 1]) != int(out[2]):
                     res['response']['tts'] = 'Неверный ход, подумай ещё.'
                     res['response']['text'] = 'Неверный ход :('
                     return
                 else:
-                    chosen_grid[out[1] - 1] = chosen_grid[out[1] - 1][:out[0] - 1] + str(out[2]) + \
-                                              chosen_grid[out[1] - 1][out[0]:]
-                    chosen_grid = grid_to_string(chosen_grid)
-                    users.chosen_grid = chosen_grid
+                    params[user_id]['chosen_grid'][out[1] - 1] = params[user_id]['chosen_grid'][out[1] - 1][:out[0] - 1] + str(out[2]) + \
+                                              params[user_id]['chosen_grid'][out[1] - 1][out[0]:]
+                    params[user_id]['chosen_grid'] = grid_to_string(params[user_id]['chosen_grid'])
+                    users.chosen_grid = params[user_id]['chosen_grid']
                     session.commit()
-                    if '.' not in chosen_grid:
-                        chosen_grid = ''
+                    if '.' not in params[user_id]['chosen_grid']:
+                        params[user_id]['chosen_grid'] = ''
                         session = db_session.create_session()
                         users.chosen_grid = ''
-                        chosen = False
+                        params[user_id]['chosen'] = False
                         session.commit()
                         res['response']['tts'] = 'Поздравляю, ты смог! Но никогда не помешает' \
                                                   ' практиковаться больше, чтобы играть лучше!' \
@@ -399,38 +412,39 @@ def handle_dialog(req, res):
                         res['response']['card']['image_id'] = cats[randint(0, 3)]
                         res['response']['card']['title'] = 'Поздравляю, мой друг, ты смог!'
                         res['response']['card']['description'] = 'Для начала новой игры скажи <новая игра>.'
-                        started = False
-                        diff = False
-                        diff2 = False
-                        difficulty = None
-                        chosen = False
-                        diff3 = False
-                        chosen_grid = None
-                        finished = True
-                        chosen_grid_id = None
-                        new_game = False
-                        diff4 = False
-                        solution = ''
-                        delete = False
+                        params[user_id]['started'] = False
+                        params[user_id]['diff'] = False
+                        params[user_id]['diff2'] = False
+                        params[user_id]['difficulty'] = None
+                        params[user_id]['chosen'] = False
+                        params[user_id]['diff3'] = False
+                        params[user_id]['chosen_grid'] = None
+                        params[user_id]['finished'] = True
+                        params[user_id]['chosen_grid_id'] = None
+                        params[user_id]['new_game'] = False
+                        params[user_id]['diff4'] = False
+                        params[user_id]['solution'] = ''
+                        params[user_id]['delete'] = False
                         return
                     else:
-                        res['response']['text'] = output_grid(chosen_grid)
-                        if delete:
-                            old = users.image
+                        res['response']['text'] = output_grid(params[user_id]['chosen_grid'])
+                        res['response']['tts'] = 'Отлично, продолжай в том же духе!'
+                        if params[user_id]['delete']:
+                            params[user_id]['old'] = users.image
                         else:
-                            delete = True
-                        users.image = choose_box((out[0], out[1]), str(out[2]), res, users)
+                            params[user_id]['delete'] = True
+                        users.image = choose_box((out[0], out[1]), str(out[2]), res, users, user_id)
                         session.commit()
-                        if old:
-                            yandex.deleteImage(old)
-                            old = ''
+                        if params[user_id]['old']:
+                            yandex.deleteImage(params[user_id]['old'])
+                            params[user_id]['old'] = ''
                         return
-        started = True
-        if user_id not in facts_user.keys():
-            facts_user[user_id] = 0
-        if not diff and started:
-            diff = True
-            diff2 = True
+        params[user_id]['started'] = True
+        if params[user_id]['user_id'] not in facts_user.keys():
+            facts_user[params[user_id]['user_id']] = 0
+        if not params[user_id]['diff'] and params[user_id]['started']:
+            params[user_id]['diff'] = True
+            params[user_id]['diff2'] = True
             res['response']['text'] = 'Выбери уровнь сложности'
             res['response']['tts'] = 'Выбери уровень сложности'
             res['response']['buttons'] = [
@@ -443,19 +457,26 @@ def handle_dialog(req, res):
             ]
             return
 
-        if not started:
+        if not params[user_id]['started']:
             del res['response']['buttons'][0]
-            if get_fact(user_id) == "Извини, но у меня нет больше фактов.":
+            if get_fact(params[user_id]['user_id']) == "Извини, но у меня нет больше фактов.":
                 del res['response']['buttons'][2]
-    if users.chosen_grid and not diff:
+    if users.chosen_grid and not params[user_id]['diff']:
         res['response']['buttons'] = []
-        chosen = True
-        started = True
-        chosen_grid = users.chosen_grid
-        solution = get_solve(difficulty, chosen_grid, user_id)
-        diff = True
+        params[user_id]['chosen'] = True
+        params[user_id]['started'] = True
+        gr = session.query(EasyGrid).filter(EasyGrid.image == users.image).first()
+        if gr is None:
+            gr = session.query(NormalGrid).filter(NormalGrid.image == users.image).first()
+        if gr is None:
+            gr = session.query(HardGrid).filter(HardGrid.image == users.image).first()
+        if gr is None:
+            params[user_id]['delete'] = True
+        params[user_id]['chosen_grid'] = users.chosen_grid
+        params[user_id]['solution'] = get_solve(params[user_id]['difficulty'], params[user_id]['chosen_grid'], params[user_id]['user_id'])
+        params[user_id]['diff'] = True
         res['response']['tts'] = 'С возвращением! Продолжаем играть!'
-        res['response']['text'] = output_grid(chosen_grid)
+        res['response']['text'] = output_grid(params[user_id]['chosen_grid'])
         res['response']['card'] = {}
         res['response']['card']['type'] = 'BigImage'
         res['response']['card']['image_id'] = users.image
@@ -502,7 +523,6 @@ def get_number(inp):
 
 
 def choose_grid(dif, user_id):
-    global solution
     session = db_session.create_session()
     a = str(randint(1, 337))
     if not dif:
@@ -589,8 +609,8 @@ def date_base_init():
     db_session.global_init(app.config['SQLITE3_SETTINGS']['host'])
 
 
-def choose_box(cords, parse, res, users):  # столбец строка
-    global delete
+def choose_box(cords, parse, res, users, user_id):  # столбец строка
+    global params
     column = [175, 200, 225, 253, 281, 308, 337, 363, 390]
     row = [22, 45, 70, 98, 123, 149, 177, 202, 229]
     a = column[int(cords[0]) - 1]
@@ -607,7 +627,7 @@ def choose_box(cords, parse, res, users):  # столбец строка
     res['response']['card']['image_id'] = x
     res['response']['card']['title'] = 'Строки:А, Б, В, Г, Д, Е, Ж, З, И\n' \
                                        'Столбцы:1, 2, 3, 4, 5, 6, 7, 8, 9'
-    delete = True
+    params[user_id]['delete'] = True
     return x
 
 
