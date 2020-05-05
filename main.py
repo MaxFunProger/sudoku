@@ -59,6 +59,7 @@ facts = ['Бертхам Фельгенхауэр установил, что м�
          'Решения судоку должны находиться логически, а не перебором или угадыванием!']
 cats = ['213044/727f46a6589e927ea547', '1030494/0444ee843b32719ed9e1',
         '1030494/d5331e4641a4808ba8aa', '1652229/3ca647181ecc7547f1e7']
+good = ['Отлично, продолжай в том же духе!', 'Молодец, так держать!', 'Совершенно верно!', 'Превосходно!', 'Просто превосходно!', 'Гениальный ход!']
 params = dict()
 yandex = YandexImages()
 # loaded = yandex.getLoadedImages()
@@ -86,10 +87,6 @@ def main():
 
 
 def handle_dialog(req, res):
-    global params
-    f = open('/home/Miximka/mysite/wrong.txt', 'w')
-    print('dfgdsdf', file=f)
-    f.close()
     user_id = req['session']['user_id']
     if user_id not in params.keys():
         params[user_id] = {'user_id': req['session']['user_id'],
@@ -254,7 +251,8 @@ def handle_dialog(req, res):
                                   '5) Скажи <новая игра>, чтобы начать заново новое поле.\n' \
                                   '6) Скажи <убери>, чтобы сбросить поле и перейти на главную.\n' \
                                   '7) Скажи <хватит> для выхода.\n' \
-                                  '8) Веселись, думай, разработай свою тактику!'
+                                  '8) Веселись, думай, разработай свою тактику! \n' \
+                                  '9) Если что-то пошло не так, просто перезапусти навык :)'
         res['response']['tts'] = 'Правила просты sil <[1000]> ' \
                                   'Первое sil <[500]> Заполни поле, используя только цифры от 1 до 9.' \
                                   'Второе sil <[500]> Заполни поле так, чтобы ни в строке, ни в столбце,' \
@@ -262,9 +260,10 @@ def handle_dialog(req, res):
                                   'Третье sil <[500]> Для того, чтобы сделать ход, просто назови букву строки, номер столбца и цифру.' \
                                   'Четвёртое sil <[500]> Скажи sil <[500]> начать sil <[500]> для запуска игры.' \
                                   'Пятое sil <[500]> Скажи sil <[500]> новая игра sil <[500]> чтобы начать заново новое поле.' \
-                                  'Шестое sil <[500]> Скажи sil <[500]> убери sil <[500]> чтобы сбросить поле и перейти на главную' \
+                                  'Шестое sil <[500]> Скажи sil <[500]> убери sil <[500]> чтобы сбросить поле и перейти на главную.' \
                                   'Седьмое sil <[500]> Скажи sil <[500]> хватит sil <[500]> для выхода.' \
-                                  'Восьмое sil <[500]> Веселись, думай, разработай свою тактику!'
+                                  'Восьмое sil <[500]> Веселись, думай, разработай свою тактику!' \
+                                  'Девятое sil <[500]> Если что-то пошло не так, просто перезапусти навык.'
         if user_id not in facts_user.keys():
             facts_user[user_id] = 0
         if not params[user_id]['started']:
@@ -303,6 +302,30 @@ def handle_dialog(req, res):
                 ]
         res['response']['end_session'] = False
         return
+    elif 'поле' in req['request']['command']:
+        if users.image and users.chosen_grid:
+            res['response']['tts'] = 'Сложилась вот такая картина!'
+            res['response']['text'] = output_grid(params[user_id]['chosen_grid'])
+            res['response']['card'] = {}
+            res['response']['card']['type'] = 'BigImage'
+            res['response']['card']['image_id'] = users.image
+            res['response']['card']['title'] = 'Строки: А, Б, В, Г, Д, Е, Ж, З, И\n' \
+                                               'Столбцы: 1, 2, 3, 4, 5, 6, 7, 8, 9'
+            return
+        else:
+            res['response']['tts'] = 'Как я покажу тебе поле, если ты его еще не выбрал?'
+            res['response']['text'] = 'Как я покажу тебе поле, если ты его еще не выбрал?'
+            res['response']['buttons'] = [
+                {'title': 'Начать',
+                 'hide': True},
+                {'title': 'Хватит',
+                 'hide': True},
+                {'title': 'Помощь',
+                 'hide': True},
+                {'title': 'Факт',
+                 'hide': True}
+                ]
+            return
     elif ('новая' in req['request']['original_utterance'].lower() and 'игра' in req['request']['original_utterance'].lower() or 'начать' in req['request']['original_utterance'].lower() and 'заново' in req['request']['original_utterance'].lower() or 'заново' in req['request']['original_utterance'].lower()) or ('новая' in req['request']['command'].lower() and 'игра' in req['request']['command'].lower() or 'начать' in req['request']['command'].lower() and 'заново' in req['request']['command'].lower() or 'заново' in req['request']['command'].lower()):
         params[user_id]['started'] = False
         params[user_id]['diff'] = False
@@ -327,14 +350,16 @@ def handle_dialog(req, res):
                 for i in req['request']['command'].lower().split():
                     if 'легкий' in i or 'лёгкий' in i:
                         params[user_id]['difficulty'] = 0
-                    elif 'нормальный' in i:
+                    elif 'нормальный' in i or 'средний' in i:
                         params[user_id]['difficulty'] = 1
                     elif 'сложный' in i:
                         params[user_id]['difficulty'] = 2
+                    users.difficulty = params[user_id]['difficulty']
+                    session.commit()
                 if params[user_id]['difficulty'] is None:
                     params[user_id]['diff2'] = True
                     res['response']['text'] = 'Не совсем поняла тебя. Повтори, пожалуйста!'
-                    res['response']['tts'] = 'Не  совсем поняла тебя . Повтри , пожалуйста!'
+                    res['response']['tts'] = 'Не  совсем поняла тебя . Повтори , пожалуйста!'
                     res['response']['buttons'] = [
                         {'title': 'Легкий',
                          'hide': True},
@@ -389,6 +414,8 @@ def handle_dialog(req, res):
                 if params[user_id]['chosen_grid'][out[1] - 1][out[0] - 1] != '.' or int(params[user_id]['solution'][out[1] - 1][out[0] - 1]) != int(out[2]):
                     res['response']['tts'] = 'Неверный ход, подумай ещё.'
                     res['response']['text'] = 'Неверный ход :('
+                    params[user_id]['chosen_grid'] = grid_to_string(params[user_id]['chosen_grid'])
+                    params[user_id]['solution'] = grid_to_string(params[user_id]['solution'])
                     return
                 else:
                     params[user_id]['chosen_grid'][out[1] - 1] = params[user_id]['chosen_grid'][out[1] - 1][:out[0] - 1] + str(out[2]) + \
@@ -428,7 +455,7 @@ def handle_dialog(req, res):
                         return
                     else:
                         res['response']['text'] = output_grid(params[user_id]['chosen_grid'])
-                        res['response']['tts'] = 'Отлично, продолжай в том же духе!'
+                        res['response']['tts'] = good[randint(0, 5)]
                         if params[user_id]['delete']:
                             params[user_id]['old'] = users.image
                         else:
@@ -436,7 +463,7 @@ def handle_dialog(req, res):
                         users.image = choose_box((out[0], out[1]), str(out[2]), res, users, user_id)
                         session.commit()
                         if params[user_id]['old']:
-                            yandex.deleteImage(params[user_id]['old'])
+                            # yandex.deleteImage(params[user_id]['old'])
                             params[user_id]['old'] = ''
                         return
         params[user_id]['started'] = True
@@ -472,6 +499,7 @@ def handle_dialog(req, res):
             gr = session.query(HardGrid).filter(HardGrid.image == users.image).first()
         if gr is None:
             params[user_id]['delete'] = True
+        params[user_id]['difficulty'] = users.difficulty
         params[user_id]['chosen_grid'] = users.chosen_grid
         params[user_id]['solution'] = get_solve(params[user_id]['difficulty'], params[user_id]['chosen_grid'], params[user_id]['user_id'])
         params[user_id]['diff'] = True
@@ -498,6 +526,8 @@ def handle_dialog(req, res):
     return
 
 def get_fact(user_id):
+    if user_id not in facts_user.keys():
+        facts_user[user_id] = 0
     if facts_user[user_id] < len(facts):
         facts_user[user_id] += 1
         return facts[facts_user[user_id] - 1]
@@ -507,11 +537,11 @@ def get_fact(user_id):
 
 def get_number(inp):
     out = []
-    d = {'а': 0, 'б': 1, 'в': 2, 'г': 3, 'д': 4, 'е': 5, 'ж': 6, 'з': 7, 'и': 8}
+    d = {'а': 0, 'б': 1, 'в': 2, 'г': 3, 'д': 4, 'е': 5, 'ж': 6, 'з': 7, 'и': 8, 'z': 7}
     for i in range(len(inp)):
         if not len(out):
             if inp[i].isalpha():
-                if len(inp[i]) == 1 and 'а' <= inp[i] <= 'и' and inp[i] != 'ё':
+                if len(inp[i]) == 1 and ('а' <= inp[i] <= 'и' or inp[i] == 'z') and inp[i] != 'ё':
                     out.append(d[inp[i]])
                     continue
         if inp[i].isdigit() and len(out):
@@ -542,27 +572,27 @@ def choose_grid(dif, user_id):
         user = session.query(User).filter(User.id == user_id).first()
         s = user.normal_used
         while a in s:
-            a = randint(1, 337)
+            a = str(randint(1, 337))
         s = s + ' ' + str(a)
         user.normal_used = s
         session.commit()
         a = int(a)
-        solution = session.query(NormalGrid).filter(NormalGrid.id == a).fisrt().solution
+        solution = session.query(NormalGrid).filter(NormalGrid.id == a).first().solution
         chosen_gr = session.query(NormalGrid).filter(NormalGrid.id == a).first().grid
-        chosen_ind = session.query(EasyGrid).filter(EasyGrid.id == a).first().id
+        chosen_ind = session.query(NormalGrid).filter(NormalGrid.id == a).first().id
         return chosen_gr, chosen_ind, solution
     else:
         user = session.query(User).filter(User.id == user_id).first()
         s = user.hard_used
         while a in s:
-            a = randint(1, 337)
+            a = str(randint(1, 337))
         s = s + ' ' + str(a)
         user.hard_used = s
         session.commit()
         a = int(a)
-        solution = session.query(HardGrid).filter(HardGrid.id == a).fisrt().solution
+        solution = session.query(HardGrid).filter(HardGrid.id == a).first().solution
         chosen_gr = session.query(HardGrid).filter(HardGrid.id == a).first().grid
-        chosen_ind = session.query(EasyGrid).filter(EasyGrid.id == a).first().id
+        chosen_ind = session.query(HardGrid).filter(HardGrid.id == a).first().id
         return chosen_gr, chosen_ind, solution
 
 
@@ -649,12 +679,14 @@ def start_condition_img(id_, dif, rez):
 
 def get_solve(dif, chosen, user_id):
     session = db_session.create_session()
-    used = int(session.query(User).filter(User.id == user_id).first().easy_used.split()[-1])
     if not dif:
+        used = int(session.query(User).filter(User.id == user_id).first().easy_used.split()[-1])
         return session.query(EasyGrid).filter(EasyGrid.id == used).first().solution
     elif dif == 1:
+        used = int(session.query(User).filter(User.id == user_id).first().normal_used.split()[-1])
         return session.query(NormalGrid).filter(NormalGrid.id == used).first().solution
     else:
+        used = int(session.query(User).filter(User.id == user_id).first().hard_used.split()[-1])
         return session.query(HardGrid).filter(HardGrid.id == used).first().solution
 
 
